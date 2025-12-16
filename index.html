@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lumina Memories - 3D 交互圣诞树</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Arial', sans-serif; }
+        canvas { display: block; }
+        #video-input { position: absolute; top: 0; left: 0; opacity: 0; pointer-events: none; z-index: -1; }
+        
+        /* UI 层 */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex; flex-direction: column; justify-content: space-between;
+            padding: 20px; box-sizing: border-box;
+        }
+        
+        .loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: white; font-size: 24px; text-align: center;
+            text-shadow: 0 0 10px rgba(255,215,0, 0.8);
+            transition: opacity 0.5s;
+        }
+
+        .hud {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        .controls-hint {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .controls-hint span {
+            display: inline-block; margin: 0 15px;
+            padding: 5px 10px; border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 20px; background: rgba(0,0,0,0.4);
+        }
+    </style>
+    
+    <!-- 引入 MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <!-- 引入 Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- 隐藏的视频输入源 -->
+    <video id="video-input"></video>
+
+    <div id="ui-layer">
+        <div class="hud">LUMINA MEMORIES // v1.0</div>
+        <div id="loading-text" class="loading">
+            正在初始化视觉核心...<br>
+            <span style="font-size:14px; opacity:0.7">请允许摄像头权限以开启交互体验</span>
+        </div>
+        <div class="controls-hint" id="hints" style="opacity: 0;">
+            <span>🖐 张手: 散开记忆</span>
+            <span>✊ 握拳: 聚合圣诞树</span>
+            <span>↔ 移动: 旋转视角</span>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // ==========================================
+        // 1. 基础场景设置
+        // ==========================================
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050510, 0.02); // 深蓝迷雾
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 18);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setClearColor(0x050510);
+        document.body.appendChild(renderer.domElement);
+
+        // 灯光
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        const pointLight = new THREE.PointLight(0xffd700, 2, 50);
+        pointLight.position.set(0, 10, 10);
+        scene.add(pointLight);
+
+        // ==========================================
+        // 2. 生成素材 (程序化生成，不依赖外部图片)
+        // ==========================================
+        
+        // 生成“拍立得”纹理
+        function createPolaroidTexture(seed) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 300;
+            const ctx = canvas.getContext('2d');
+            
+            // 拍立得白边
+            ctx.fillStyle = '#fdfdfd';
+            ctx.fillRect(0, 0, 256, 300);
+            
+            // 内部照片区域 (生成抽象艺术)
+            ctx.fillStyle = `hsl(${Math.random() * 360}, 70%, 50%)`;
+            ctx.fillRect(20, 20, 216, 216);
+            
+            // 添加一些随机图案
+            for(let i=0; i<5; i++) {
+                ctx.fillStyle = `rgba(255,255,255, ${Math.random() * 0.5})`;
+                ctx.beginPath();
+                ctx.arc(20 + Math.random()*216, 20 + Math.random()*216, Math.random()*50, 0, Math.PI*2);
+                ctx.fill();
+            }
+
+            // 阴影/复古滤镜层
+            const grd = ctx.createLinearGradient(0, 0, 256, 300);
+            grd.addColorStop(0, "rgba(255,240,200,0.2)");
+            grd.addColorStop(1, "rgba(0,0,0,0.1)");
+            ctx.fillStyle = grd;
+            ctx.fillRect(0,0,256,300);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+
+        // ==========================================
+        // 3. 构建 3D 对象 (树 与 粒子)
+        // ==========================================
+        
+        const memories = []; // 存储照片对象
+        const particleCount = 2000;
+        const memoryCount = 80;
+        
+        const mainGroup = new THREE.Group();
+        scene.add(mainGroup);
+
+        // A. 构建照片 (Memories)
+        const photoGeometry = new THREE.PlaneGeometry(1.2, 1.4);
+        
+        for (let i = 0; i < memoryCount; i++) {
+            const material = new THREE.MeshPhongMaterial({
+                map: createPolaroidTexture(i),
+                side: THREE.DoubleSide,
+                shininess: 100,
+                specular: 0x222222
+            });
+            
+            const mesh = new THREE.Mesh(photoGeometry, material);
+            
+            // --- 数学计算：费马螺旋 (Fermat's Spiral) ---
+            // 1. 树形态 (Tree Position)
+            const y = -8 + (i / memoryCount) * 16; // 高度从 -8 到 8
+            const radius = 6 * (1 - (i / memoryCount)); // 底部宽，顶部尖
+            const theta = i * 2.4; // 黄金角近似值
+            
+            const treePos = new THREE.Vector3(
+                Math.cos(theta) * radius,
+                y,
+                Math.sin(theta) * radius
+            );
+            
+            // 2. 散开形态 (Galaxy Position) - 球形随机分布
+            const phi = Math.acos(-1 + (2 * i) / memoryCount);
+            const galaxyRadius = 12 + Math.random() * 5;
+            const galaxyPos = new THREE.Vector3(
+                galaxyRadius * Math.sin(phi) * Math.cos(theta),
+                galaxyRadius * Math.cos(phi),
+                galaxyRadius * Math.sin(phi) * Math.sin(theta)
+            );
+
+            // 存储数据供动画使用
+            mesh.userData = {
+                treePos: treePos,
+                galaxyPos: galaxyPos,
+                rotationOffset: Math.random() * Math.PI,
+                randomSpeed: 0.5 + Math.random()
+            };
+
+            // 初始位置
+            mesh.position.copy(treePos);
+            mesh.lookAt(0, y, 0); // 朝向中心
+            
+            mainGroup.add(mesh);
+            memories.push(mesh);
+        }
+
+        // B. 构建光之尘 (Particles)
+        const particlesGeometry = new THREE.BufferGeometry();
+        const pPositions = [];
+        const pTreeTargets = [];
+        const pGalaxyTargets = [];
+        
+        for (let i = 0; i < particleCount; i++) {
+            // 树形态粒子：紧贴树表面螺旋
+            const y = -8 + Math.random() * 16;
+            const radius = 6.5 * (1 - ((y+8)/16)) + Math.random() * 0.5;
+            const theta = Math.random() * Math.PI * 2 * 20; // 更多圈
+            
+            const tx = Math.cos(theta) * radius;
+            const tz = Math.sin(theta) * radius;
+            
+            pPositions.push(tx, y, tz);
+            pTreeTargets.push(tx, y, tz);
+            
+            // 散开形态粒子：弥漫整个空间
+            const gr = 10 + Math.random() * 15;
+            const gTheta = Math.random() * Math.PI * 2;
+            const gPhi = Math.acos(2 * Math.random() - 1);
+            
+            pGalaxyTargets.push(
+                gr * Math.sin(gPhi) * Math.cos(gTheta),
+                gr * Math.cos(gPhi),
+                gr * Math.sin(gPhi) * Math.sin(gTheta)
+            );
+        }
+
+        particlesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(pPositions, 3));
+        particlesGeometry.setAttribute('treeTarget', new THREE.Float32BufferAttribute(pTreeTargets, 3));
+        particlesGeometry.setAttribute('galaxyTarget', new THREE.Float32BufferAttribute(pGalaxyTargets, 3));
+
+        // 简单的发光粒子材质
+        const particlesMaterial = new THREE.PointsMaterial({
+            color: 0xffd700,
+            size: 0.15,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending // 关键：叠加发光
+        });
+
+        const particleSystem = new THREE.Points(particlesGeometry, particlesMaterial);
+        mainGroup.add(particleSystem);
+
+        // 树顶星星
+        const starGeo = new THREE.OctahedronGeometry(0.8, 0);
+        const starMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+        const topStar = new THREE.Mesh(starGeo, starMat);
+        topStar.position.set(0, 8.5, 0);
+        mainGroup.add(topStar);
+
+
+        // ==========================================
+        // 4. 状态管理与动画循环
+        // ==========================================
+        
+        const state = {
+            expansion: 0, // 0 = 树, 1 = 散开
+            targetExpansion: 0,
+            rotationVelocity: 0.002, // 自动旋转速度
+            targetRotationY: 0,
+            isHandDetected: false
+        };
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // 1. 平滑过渡 Expansion (Lerp)
+            state.expansion += (state.targetExpansion - state.expansion) * 3.0 * delta;
+
+            // 2. 更新照片位置
+            memories.forEach((mesh, i) => {
+                // 位置插值
+                const currentPos = new THREE.Vector3().lerpVectors(
+                    mesh.userData.treePos,
+                    mesh.userData.galaxyPos,
+                    state.expansion
+                );
+                
+                // 悬浮呼吸效果
+                currentPos.y += Math.sin(time * mesh.userData.randomSpeed + i) * 0.05;
+                
+                mesh.position.copy(currentPos);
+                
+                // 旋转逻辑：聚合时朝向中心，散开时随即漂浮
+                if (state.expansion < 0.1) {
+                    mesh.lookAt(0, mesh.position.y, 0);
+                    mesh.rotation.y += Math.PI; // 修正面朝向
+                } else {
+                    mesh.rotation.x += delta * 0.1;
+                    mesh.rotation.y += delta * 0.1;
+                }
+            });
+
+            // 3. 更新粒子位置 (直接操作 BufferAttribute)
+            const positions = particleSystem.geometry.attributes.position.array;
+            const treeTargets = particleSystem.geometry.attributes.treeTarget.array;
+            const galaxyTargets = particleSystem.geometry.attributes.galaxyTarget.array;
+
+            for(let i=0; i<particleCount; i++) {
+                const i3 = i * 3;
+                // 简单的线性插值
+                positions[i3] = treeTargets[i3] * (1 - state.expansion) + galaxyTargets[i3] * state.expansion;
+                positions[i3+1] = treeTargets[i3+1] * (1 - state.expansion) + galaxyTargets[i3+1] * state.expansion;
+                positions[i3+2] = treeTargets[i3+2] * (1 - state.expansion) + galaxyTargets[i3+2] * state.expansion;
+                
+                // 粒子闪烁
+                if (Math.random() > 0.95) {
+                   positions[i3+1] += (Math.random() - 0.5) * 0.1; 
+                }
+            }
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+
+            // 4. 整体旋转控制
+            if (state.isHandDetected) {
+                // 手势控制：平滑旋转至目标角度
+                // 简单的惯性模拟
+                mainGroup.rotation.y += (state.targetRotationY - mainGroup.rotation.y) * 2 * delta;
+            } else {
+                // 无手势：自动漫游旋转
+                mainGroup.rotation.y += state.rotationVelocity;
+            }
+
+            // 顶部星星旋转
+            topStar.rotation.y -= delta;
+            topStar.rotation.z += delta * 0.5;
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // 窗口大小调整
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ==========================================
+        // 5. MediaPipe 手势识别逻辑
+        // ==========================================
+        
+        const videoElement = document.getElementById('video-input');
+        
+        function onResults(results) {
+            // 隐藏 Loading
+            document.getElementById('loading-text').style.opacity = 0;
+            document.getElementById('hints').style.opacity = 1;
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                state.isHandDetected = true;
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // --- 交互逻辑 A: 旋转 (基于手腕在屏幕的X坐标) ---
+                const wrist = landmarks[0];
+                // 映射 0-1 到 -PI 到 PI
+                const targetRot = (wrist.x - 0.5) * -Math.PI * 2; // 反向以符合直觉
+                state.targetRotationY = targetRot;
+
+                // --- 交互逻辑 B: 聚合/散开 (基于指尖距离) ---
+                // 计算拇指(4)和食指(8)的距离
+                const thumb = landmarks[4];
+                const index = landmarks[8];
+                const middle = landmarks[12];
+                const ring = landmarks[16];
+                const pinky = landmarks[20];
+
+                // 简单的判断：手掌张开 vs 握拳
+                // 如果指尖离手腕(0)很远 -> 张开。如果很近 -> 握拳。
+                // 这里用更简单的：拇指和食指距离
+                const pinchDist = Math.sqrt(
+                    Math.pow(thumb.x - index.x, 2) + 
+                    Math.pow(thumb.y - index.y, 2)
+                );
+
+                // 阈值判断 (视摄像头距离而定，通常0.1-0.2是分界线)
+                // 或者判断所有手指是否伸直（y坐标对比）
+                
+                // 逻辑：如果拇指和食指分得开 -> 张开 (Expand)
+                if (pinchDist > 0.15) {
+                    state.targetExpansion = 1.0;
+                } else {
+                    state.targetExpansion = 0.0;
+                }
+
+            } else {
+                state.isHandDetected = false;
+                state.targetExpansion = 0.0; // 手消失时自动变回树
+            }
+        }
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+
+        // 启动摄像头
+        cameraUtils.start().catch(err => {
+            console.error("Camera init failed:", err);
+            document.getElementById('loading-text').innerHTML = "无法访问摄像头<br>将以自动演示模式运行";
+            // 即使没有摄像头，3D场景依然会运行
+        });
+
+    </script>
+</body>
+</html>
