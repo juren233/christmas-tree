@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Christmas Tree Ultimate Fix</title>
+    <title>Christmas Tree: Android Fix</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -11,101 +11,97 @@
             font-family: sans-serif; touch-action: none;
         }
 
-        /* 3D 画布 */
+        /* 3D 容器 */
         #canvas-container {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
         }
 
-        /* 关键：视频元素必须存在且有尺寸，但隐藏在后面 */
-        /* 不要用 display:none 或 opacity:0，有些浏览器会停止渲染 */
+        /* 关键修改：视频元素不能太小，必须“可见”但透明，否则小米浏览器不渲染 */
         #input-video {
-            position: absolute; top: 0; left: 0;
-            width: 1px; height: 1px; /* 极小 */
-            z-index: -10;
+            position: absolute; 
+            top: 0; left: 0; 
+            width: 100%; /* 让它撑满，保持比例 */
+            height: 100%; 
+            object-fit: cover;
+            opacity: 0.001; /* 几乎透明，但不是 display:none */
+            z-index: -5; 
             pointer-events: none;
         }
 
-        /* 调试视图：右上角小窗口，用于确认是否识别到骨架 */
+        /* 调试小窗 */
         #debug-canvas {
             position: absolute; bottom: 10px; right: 10px;
-            width: 100px; height: 133px;
+            width: 120px; height: 160px; /* 竖屏比例 */
             background: rgba(0,0,0,0.5);
-            border: 1px solid rgba(255,255,255,0.3);
+            border: 2px solid rgba(255,255,255,0.3);
             z-index: 100;
             border-radius: 8px;
-            transform: scaleX(-1); /* 镜像 */
+            /* 镜像翻转，符合自拍直觉 */
+            transform: scaleX(-1); 
         }
 
-        /* UI 面板 */
-        #ui-panel {
-            position: absolute; top: 20px; left: 0; right: 0;
-            text-align: center; z-index: 20; pointer-events: none;
-        }
-
-        .status-pill {
-            display: inline-block;
-            background: rgba(20, 20, 20, 0.8);
-            border: 1px solid rgba(255, 215, 0, 0.5);
-            padding: 8px 20px;
-            border-radius: 20px;
-            color: #FFD700;
-            font-size: 16px;
-            font-weight: bold;
-            box-shadow: 0 0 15px rgba(0,0,0,0.5);
-        }
-
-        /* 数据调试面板 (左上角) - 如果还是不行，看这里的数字 */
+        /* 数据调试面板 */
         #data-debug {
             position: absolute; top: 10px; left: 10px;
-            font-size: 10px; color: #0f0; background: rgba(0,0,0,0.7);
-            padding: 5px; z-index: 200; pointer-events: none;
-            text-align: left; font-family: monospace;
+            font-size: 12px; color: #0f0; background: rgba(0,0,0,0.6);
+            padding: 8px; z-index: 200; pointer-events: none;
+            border-radius: 4px; line-height: 1.5;
         }
 
-        /* 启动按钮 */
+        /* 启动遮罩 */
         #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 999;
             display: flex; flex-direction: column;
             justify-content: center; align-items: center;
+            transition: opacity 0.5s;
         }
+        
         button {
-            background: #C41E3A; color: white; border: none;
-            padding: 15px 40px; border-radius: 50px; font-size: 18px;
-            margin-top: 20px;
+            background: #2F5A46; color: #fff; border: 1px solid #FFD700;
+            padding: 15px 50px; border-radius: 50px; font-size: 18px;
+            margin-top: 20px; box-shadow: 0 0 20px rgba(47, 90, 70, 0.8);
+        }
+
+        /* 状态提示 */
+        #ui-panel {
+            position: absolute; top: 60px; width: 100%; text-align: center; z-index: 10; pointer-events: none;
+        }
+        #status-text {
+            display: inline-block; padding: 5px 15px;
+            background: rgba(0,0,0,0.5); border-radius: 15px;
+            color: #FFD700; font-weight: bold; border: 1px solid #FFD700;
         }
     </style>
 </head>
 <body>
 
-    <!-- 调试数据显示 -->
+    <!-- 调试数据 -->
     <div id="data-debug">
-        CAM: Init...<br>
-        HAND: No<br>
-        PINCH: 0.00
+        SYSTEM: Ready<br>
+        RES: -<br>
+        HAND: Searching...
     </div>
 
     <!-- 启动层 -->
     <div id="overlay">
-        <h2 style="color:#FFD700">🎄 3D 圣诞树 - 最终修复版</h2>
-        <p style="color:#aaa; font-size:12px; max-width:80%; text-align:center;">
-            针对小米15及iPhone SE优化<br>
-            请允许摄像头权限
-        </p>
-        <button id="btn-start">点击开始</button>
+        <h1 style="color:#C41E3A; margin-bottom:10px;">🎄 圣诞树手势版</h1>
+        <p style="color:#ccc; font-size:12px;">适配小米15 / iOS</p>
+        <button id="btn-start">开启摄像头</button>
     </div>
 
-    <!-- UI -->
-    <div id="ui-panel">
-        <div class="status-pill" id="status-text">等待手势...</div>
-    </div>
+    <div id="ui-panel"><div id="status-text">等待启动...</div></div>
 
-    <!-- 核心元素 -->
+    <!-- 视频流 -->
     <video id="input-video" playsinline webkit-playsinline muted autoplay></video>
+    
+    <!-- 调试画布 -->
     <canvas id="debug-canvas"></canvas>
+    
+    <!-- 3D 场景 -->
     <div id="canvas-container"></div>
 
-    <!-- 脚本 -->
+    <!-- 依赖库 -->
     <script type="importmap">
         { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
     </script>
@@ -118,268 +114,287 @@
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
-        // --- 全局状态 ---
-        const STATE = {
-            target: 'tree',
-            rotX: 0,
-            hasHand: false
-        };
-
-        const DEBUG = {
-            camRes: '0x0',
-            pinchDist: 0
-        };
-
-        const debugEl = document.getElementById('data-debug');
-        const statusEl = document.getElementById('status-text');
-
-        // --- 1. Three.js 场景构建 ---
-        const container = document.getElementById('canvas-container');
-        const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x050505, 0.03);
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 10, 40);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 限制DPI防过热
-        container.appendChild(renderer.domElement);
-
-        // 辉光
-        const composer = new EffectComposer(renderer);
-        composer.addPass(new RenderPass(scene, camera));
-        const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-        bloom.strength = 1.2; bloom.radius = 0.5; bloom.threshold = 0.2;
-        composer.addPass(bloom);
-
-        // 资源
-        const group = new THREE.Group();
-        scene.add(group);
-
-        // 灯光
-        scene.add(new THREE.AmbientLight(0xffffff, 0.1));
-        const light = new THREE.PointLight(0xFFD700, 2, 50);
-        light.position.set(0, 20, 10);
-        scene.add(light);
-
-        // 粒子系统
-        const pCount = 1000;
-        const pGeo = new THREE.BufferGeometry();
-        const pPos = [], pCol = [], pSizes = [];
-        const tTree = [], tScatter = [];
-        const colors = [new THREE.Color(0x2F5A46), new THREE.Color(0xFFD700), new THREE.Color(0xC41E3A)];
-
-        for(let i=0; i<pCount; i++) {
-            // Tree
-            const rRatio = i/pCount; 
-            const y = rRatio * 30 - 15;
-            const r = (1 - rRatio) * 12 + Math.random();
-            const angle = i * 0.2;
-            const x = Math.cos(angle*8)*r; 
-            const z = Math.sin(angle*8)*r;
-            tTree.push(x, y, z);
-            pPos.push(x, y, z);
-
-            // Scatter
-            const sr = 30 + Math.random()*10;
-            const theta = Math.random()*Math.PI*2;
-            const phi = Math.random()*Math.PI;
-            tScatter.push(sr*Math.sin(phi)*Math.cos(theta), sr*Math.sin(phi)*Math.sin(theta), sr*Math.cos(phi));
-
-            const c = colors[i%3];
-            pCol.push(c.r, c.g, c.b);
-            pSizes.push(Math.random()+0.5);
-        }
-        pGeo.setAttribute('position', new THREE.Float32BufferAttribute(pPos, 3));
-        pGeo.setAttribute('color', new THREE.Float32BufferAttribute(pCol, 3));
-        pGeo.setAttribute('size', new THREE.Float32BufferAttribute(pSizes, 1));
-        
-        // 纹理
-        const cvs = document.createElement('canvas'); cvs.width=32; cvs.height=32;
-        const ctxT = cvs.getContext('2d');
-        const grd = ctxT.createRadialGradient(16,16,0,16,16,16);
-        grd.addColorStop(0,'rgba(255,255,255,1)'); grd.addColorStop(1,'rgba(0,0,0,0)');
-        ctxT.fillStyle=grd; ctxT.fillRect(0,0,32,32);
-        const tex = new THREE.CanvasTexture(cvs);
-
-        const pMat = new THREE.PointsMaterial({
-            size: 0.8, vertexColors: true, map: tex, 
-            blending: THREE.AdditiveBlending, depthWrite: false, transparent: true
-        });
-        const particles = new THREE.Points(pGeo, pMat);
-        group.add(particles);
-
-        // 照片 placeholders
-        const photos = [];
-        const planeG = new THREE.PlaneGeometry(3, 4);
-        for(let i=0; i<20; i++) {
-            const m = new THREE.Mesh(planeG, new THREE.MeshBasicMaterial({color: i%2?0xC41E3A:0x2F5A46, side:2}));
-            const y = (i/20)*30 - 15;
-            const r = (1-i/20)*12 + 2;
-            m.position.set(Math.cos(i)*r, y, Math.sin(i)*r);
-            m.userData = { 
-                tree: m.position.clone(), 
-                scatter: new THREE.Vector3((Math.random()-.5)*50, (Math.random()-.5)*50, (Math.random()-.5)*50),
-                zoom: new THREE.Vector3((Math.random()-.5)*5, (Math.random()-.5)*5, 30 + Math.random()*5)
-            };
-            m.lookAt(0,y,0); m.rotateY(Math.PI);
-            photos.push(m);
-            group.add(m);
-        }
-
-        // 动画循环
-        function animate() {
-            requestAnimationFrame(animate);
-            
-            // 数据更新
-            debugEl.innerHTML = `CAM: ${DEBUG.camRes}<br>HAND: ${STATE.hasHand?'YES':'NO'}<br>PINCH: ${DEBUG.pinchDist.toFixed(3)}`;
-
-            // 粒子插值
-            const pos = particles.geometry.attributes.position.array;
-            const target = STATE.target === 'tree' ? tTree : tScatter;
-            for(let i=0; i<pCount; i++) {
-                const k = i*3;
-                pos[k] += (target[k]-pos[k])*0.1;
-                pos[k+1] += (target[k+1]-pos[k+1])*0.1;
-                pos[k+2] += (target[k+2]-pos[k+2])*0.1;
-            }
-            particles.geometry.attributes.position.needsUpdate = true;
-
-            // 照片插值
-            photos.forEach(p => {
-                let t = p.userData.tree;
-                if(STATE.target==='scatter') t = p.userData.scatter;
-                if(STATE.target==='zoom') t = p.userData.zoom;
-                p.position.lerp(t, 0.1);
-                if(STATE.target==='zoom') p.lookAt(camera.position);
-                else { p.lookAt(0, p.position.y, 0); p.rotateY(Math.PI); }
-            });
-
-            // 旋转
-            group.rotation.y += (STATE.rotX - group.rotation.y) * 0.1;
-            if(!STATE.hasHand) group.rotation.y += 0.005;
-
-            composer.render();
-        }
-        animate();
-        window.onresize = () => {
-            camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight);
-        };
-
-        // --- 2. 视觉算法部分 (原生重写) ---
+        // --- 全局变量 ---
         const video = document.getElementById('input-video');
         const dbgCanvas = document.getElementById('debug-canvas');
         const dbgCtx = dbgCanvas.getContext('2d');
+        const debugEl = document.getElementById('data-debug');
+        const statusEl = document.getElementById('status-text');
+        
+        // 中间层 Canvas (用于清洗视频数据)
+        const processCanvas = document.createElement('canvas');
+        const processCtx = processCanvas.getContext('2d');
 
-        // 初始化 Hands
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1, // 性能平衡
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
+        const STATE = { target: 'tree', rotX: 0, hasHand: false };
+        let app = null;
 
-        // 结果处理
-        hands.onResults(results => {
-            // 绘制调试图
-            dbgCanvas.width = video.videoWidth || 100;
-            dbgCanvas.height = video.videoHeight || 133;
-            dbgCtx.save();
-            dbgCtx.clearRect(0, 0, dbgCanvas.width, dbgCanvas.height);
-            dbgCtx.drawImage(results.image, 0, 0, dbgCanvas.width, dbgCanvas.height);
-            
-            if (results.multiHandLandmarks.length > 0) {
-                STATE.hasHand = true;
-                const lm = results.multiHandLandmarks[0];
-                drawConnectors(dbgCtx, lm, HAND_CONNECTIONS, {color: '#0f0', lineWidth: 2});
+        // --- 1. Three.js 场景 ---
+        class App {
+            constructor() {
+                this.scene = new THREE.Scene();
+                this.scene.fog = new THREE.FogExp2(0x050505, 0.03);
                 
-                // 算法逻辑
-                // 1. 旋转 (X轴映射)
-                // 手机上前置摄像头通常是镜像的，但 MediaPipe 给出的坐标是规范化的
-                // 如果觉得反了，把 (lm[9].x - 0.5) 改成 (0.5 - lm[9].x)
-                STATE.rotX = (0.5 - lm[9].x) * 5; 
+                this.camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+                this.camera.position.set(0, 10, 45);
 
-                // 2. 捏合 (拇指4 - 食指8)
-                const dPinch = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-                DEBUG.pinchDist = dPinch;
+                this.renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                document.getElementById('canvas-container').appendChild(this.renderer.domElement);
 
-                // 3. 展开 (统计指尖到手腕距离 vs 关节到手腕距离)
-                const wrist = lm[0];
-                let openCount = 0;
-                [8,12,16,20].forEach((tip, i) => {
-                    const pip = [6,10,14,18][i];
-                    if (Math.hypot(lm[tip].x-wrist.x, lm[tip].y-wrist.y) > 
-                        Math.hypot(lm[pip].x-wrist.x, lm[pip].y-wrist.y)) openCount++;
+                // 辉光
+                this.composer = new EffectComposer(this.renderer);
+                this.composer.addPass(new RenderPass(this.scene, this.camera));
+                this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+                this.bloom.strength = 1.0; this.bloom.radius = 0.5; this.bloom.threshold = 0.2;
+                this.composer.addPass(this.bloom);
+
+                this.initObjects();
+                this.animate();
+                window.addEventListener('resize', () => this.resize());
+            }
+
+            initObjects() {
+                const group = new THREE.Group();
+                this.scene.add(group);
+                this.group = group;
+
+                // 灯光
+                this.scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+                const l = new THREE.PointLight(0xFFD700, 2, 50);
+                l.position.set(0, 20, 10);
+                this.scene.add(l);
+
+                // 粒子
+                const geo = new THREE.BufferGeometry();
+                const pos=[], col=[], sizes=[];
+                const tTree=[], tScatter=[];
+                const colors = [0x2F5A46, 0xFFD700, 0xC41E3A, 0xFFFFFF].map(c=>new THREE.Color(c));
+
+                for(let i=0; i<1200; i++) {
+                    const rRatio = i/1200;
+                    // Tree
+                    const y = rRatio * 30 - 15;
+                    const r = (1-rRatio)*12 + Math.random();
+                    const a = i * 0.2;
+                    tTree.push(Math.cos(a*8)*r, y, Math.sin(a*8)*r);
+                    
+                    // Scatter
+                    const sr = 35 + Math.random()*15;
+                    const phi = Math.random()*Math.PI*2, theta = Math.random()*Math.PI;
+                    tScatter.push(sr*Math.sin(theta)*Math.cos(phi), sr*Math.sin(theta)*Math.sin(phi), sr*Math.cos(theta));
+                    
+                    pos.push(tTree[i*3], tTree[i*3+1], tTree[i*3+2]);
+                    const c = colors[i%4];
+                    col.push(c.r, c.g, c.b);
+                    sizes.push(Math.random()*0.8+0.4);
+                }
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+                geo.setAttribute('color', new THREE.Float32BufferAttribute(col,3));
+                geo.setAttribute('size', new THREE.Float32BufferAttribute(sizes,1));
+                geo.userData = {tree:tTree, scatter:tScatter};
+
+                const tex = this.makeTex();
+                const mat = new THREE.PointsMaterial({size:0.8, vertexColors:true, map:tex, blending:THREE.AdditiveBlending, depthWrite:false, transparent:true});
+                this.parts = new THREE.Points(geo, mat);
+                group.add(this.parts);
+
+                // 照片
+                this.photos = [];
+                const pGeo = new THREE.PlaneGeometry(3,4);
+                for(let i=0; i<20; i++){
+                    const m = new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial({color:i%2?0xC41E3A:0x2F5A46, side:2}));
+                    const y = (i/20)*30-15, r = (1-i/20)*12+2, a = i*0.5;
+                    m.userData = {
+                        tree: new THREE.Vector3(Math.cos(a*5)*r, y, Math.sin(a*5)*r),
+                        zoom: new THREE.Vector3((Math.random()-.5)*6, (Math.random()-.5)*6, 32+Math.random()*4),
+                        scatter: new THREE.Vector3((Math.random()-.5)*60, (Math.random()-.5)*60, (Math.random()-.5)*60)
+                    };
+                    m.position.copy(m.userData.tree);
+                    m.lookAt(0,y,0); m.rotateY(Math.PI);
+                    this.photos.push(m);
+                    group.add(m);
+                }
+            }
+
+            makeTex() {
+                const c = document.createElement('canvas'); c.width=32; c.height=32;
+                const ctx = c.getContext('2d');
+                const g = ctx.createRadialGradient(16,16,0,16,16,16);
+                g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(1,'rgba(0,0,0,0)');
+                ctx.fillStyle=g; ctx.fillRect(0,0,32,32);
+                return new THREE.CanvasTexture(c);
+            }
+
+            resize() {
+                this.camera.aspect = window.innerWidth/window.innerHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.composer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            animate() {
+                requestAnimationFrame(()=>this.animate());
+                
+                // 粒子运动
+                const pos = this.parts.geometry.attributes.position.array;
+                const tgt = STATE.target === 'tree' ? this.parts.geometry.userData.tree : this.parts.geometry.userData.scatter;
+                for(let i=0; i<1200; i++) {
+                    const k=i*3;
+                    pos[k] += (tgt[k]-pos[k])*0.08;
+                    pos[k+1] += (tgt[k+1]-pos[k+1])*0.08;
+                    pos[k+2] += (tgt[k+2]-pos[k+2])*0.08;
+                }
+                this.parts.geometry.attributes.position.needsUpdate = true;
+
+                // 照片运动
+                this.photos.forEach(p => {
+                    let t = p.userData.tree;
+                    if(STATE.target==='scatter') t = p.userData.scatter;
+                    if(STATE.target==='zoom') t = p.userData.zoom;
+                    p.position.lerp(t, 0.08);
+                    
+                    if(STATE.target==='zoom') p.lookAt(this.camera.position);
+                    else {
+                        const lookT = STATE.target==='scatter'? p.position : new THREE.Vector3(0,p.position.y,0);
+                        p.lookAt(lookT); if(STATE.target==='tree') p.rotateY(Math.PI);
+                    }
                 });
 
-                // 状态机 - 阈值调整
-                // iPhone SE 捏合修复：阈值从 0.04 调大到 0.08
-                if (dPinch < 0.08) { 
-                    STATE.target = 'zoom';
-                    statusEl.innerText = "🔍 照片模式";
-                    statusEl.style.color = "#fff";
-                } else if (openCount >= 4) {
-                    STATE.target = 'scatter';
-                    statusEl.innerText = "✨ 爆炸散开";
-                    statusEl.style.color = "#C41E3A";
-                } else if (openCount <= 1) {
-                    STATE.target = 'tree';
-                    statusEl.innerText = "🎄 圣诞树";
-                    statusEl.style.color = "#FFD700";
-                }
-            } else {
-                STATE.hasHand = false;
-                statusEl.innerText = "请将手放入画面";
-                statusEl.style.color = "#aaa";
-            }
-            dbgCtx.restore();
-        });
+                // 旋转
+                const targetRot = STATE.rotX;
+                this.group.rotation.y += (targetRot - this.group.rotation.y)*0.1;
+                if(!STATE.hasHand) this.group.rotation.y += 0.003;
 
-        // --- 3. 原生摄像头启动 (解决小米问题) ---
-        async function startCamera() {
+                this.composer.render();
+            }
+        }
+
+        // --- 2. AI 逻辑 ---
+        async function initAI() {
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1, // 移动端 1 更精准，若卡顿改 0
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            hands.onResults(results => {
+                // 绘制调试
+                dbgCanvas.width = processCanvas.width;
+                dbgCanvas.height = processCanvas.height;
+                dbgCtx.clearRect(0,0,dbgCanvas.width, dbgCanvas.height);
+                // 画出 AI 看到的实际图像
+                dbgCtx.drawImage(results.image, 0, 0, dbgCanvas.width, dbgCanvas.height);
+
+                if (results.multiHandLandmarks.length > 0) {
+                    STATE.hasHand = true;
+                    const lm = results.multiHandLandmarks[0];
+                    drawConnectors(dbgCtx, lm, HAND_CONNECTIONS, {color:'#0f0', lineWidth:2});
+                    drawLandmarks(dbgCtx, lm, {color:'#f00', lineWidth:1});
+
+                    // 1. 旋转 (镜像处理)
+                    STATE.rotX = (0.5 - lm[9].x) * 4;
+
+                    // 2. 捏合计算 (更宽松的阈值)
+                    const dPinch = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+                    
+                    // 3. 展开计算
+                    const wrist = lm[0];
+                    let openFingers = 0;
+                    [8,12,16,20].forEach((tip, i) => {
+                        const pip = [6,10,14,18][i];
+                        if(Math.hypot(lm[tip].x-wrist.x, lm[tip].y-wrist.y) > Math.hypot(lm[pip].x-wrist.x, lm[pip].y-wrist.y)) 
+                            openFingers++;
+                    });
+
+                    // 状态判定
+                    let txt = "HAND DETECTED";
+                    let col = "#fff";
+
+                    // 阈值：0.08 适配 iPhone SE
+                    if (dPinch < 0.08) {
+                        STATE.target = 'zoom';
+                        txt = "🔍 捏合: 照片预览";
+                    } else if (openFingers >= 4) {
+                        STATE.target = 'scatter';
+                        txt = "✨ 张开: 星尘爆发";
+                        col = "#C41E3A";
+                    } else if (openFingers <= 1) {
+                        STATE.target = 'tree';
+                        txt = "🎄 握拳: 圣诞树";
+                        col = "#FFD700";
+                    }
+                    
+                    statusEl.innerText = txt;
+                    statusEl.style.color = col;
+                    debugEl.innerHTML = `RES: ${processCanvas.width}x${processCanvas.height}<br>PINCH: ${dPinch.toFixed(3)}<br>STATE: ${STATE.target}`;
+
+                } else {
+                    STATE.hasHand = false;
+                    statusEl.innerText = "请将手放入画面";
+                    statusEl.style.color = "#aaa";
+                    debugEl.innerHTML = `RES: ${processCanvas.width}x${processCanvas.height}<br>HAND: NO`;
+                }
+            });
+            return hands;
+        }
+
+        // --- 3. 摄像头启动与循环 ---
+        async function start() {
+            document.getElementById('btn-start').innerText = "正在启动...";
+            
+            app = new App();
+            const hands = await initAI();
+
             try {
-                // 关键：不设置具体的 width/height，只请求 'user' (前置)
-                // 让浏览器和系统协商最佳分辨率，防止被系统拒绝
+                // 请求摄像头
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: 'user',
-                        // 如果必须加限制，只加 ideal
-                        width: { ideal: 640 }, 
+                        width: { ideal: 640 }, // 不要强制，给个理想值
                         height: { ideal: 480 }
                     },
                     audio: false
                 });
-
+                
                 video.srcObject = stream;
-                // 必须在 loadedmetadata 后才能获取真实分辨率
+                
+                // 等待元数据
                 video.onloadedmetadata = () => {
+                    document.getElementById('overlay').style.opacity = 0;
+                    setTimeout(()=>document.getElementById('overlay').style.display='none', 500);
                     video.play();
-                    DEBUG.camRes = `${video.videoWidth}x${video.videoHeight}`;
-                    processVideo(); // 开始识别循环
-                    document.getElementById('overlay').style.display = 'none';
+                    processLoop(hands);
                 };
-            } catch (err) {
-                console.error(err);
-                alert("摄像头启动失败：\n" + err.name + "\n请确保使用HTTPS且允许权限");
+
+            } catch(e) {
+                alert("摄像头启动失败: " + e.message);
+                console.error(e);
             }
         }
 
-        // 手动处理循环 (替代 camera_utils)
-        let lastVideoTime = -1;
-        async function processVideo() {
-            if (video.currentTime !== lastVideoTime) {
-                lastVideoTime = video.currentTime;
-                // 只有当视频真的在播放且有数据时才发送
-                if(video.videoWidth > 0) {
-                    await hands.send({image: video});
+        // 核心循环：手动将视频画到 Canvas 再传给 AI
+        async function processLoop(hands) {
+            if (video.readyState >= 2) {
+                // 1. 设置中间层 Canvas 尺寸匹配视频流
+                if (processCanvas.width !== video.videoWidth) {
+                    processCanvas.width = video.videoWidth;
+                    processCanvas.height = video.videoHeight;
                 }
+                
+                // 2. 清洗数据：将 Video 帧画到 Canvas 上
+                // 这步操作会强制浏览器解码当前帧，解决“视频元素不可见导致不解码”的问题
+                processCtx.drawImage(video, 0, 0);
+
+                // 3. 发送清洗后的 Canvas 给 AI
+                await hands.send({image: processCanvas});
             }
-            requestAnimationFrame(processVideo);
+            requestAnimationFrame(() => processLoop(hands));
         }
 
-        document.getElementById('btn-start').onclick = startCamera;
+        document.getElementById('btn-start').onclick = start;
 
     </script>
 </body>
