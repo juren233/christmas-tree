@@ -3,110 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Christmas Tree: Android Fix</title>
+    <title>Christmas Tree: Final Rescue</title>
     <style>
-        body, html {
-            margin: 0; padding: 0; width: 100%; height: 100%;
-            overflow: hidden; background: #000;
-            font-family: sans-serif; touch-action: none;
-        }
-
-        /* 3D 容器 */
-        #canvas-container {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
-        }
-
-        /* 关键修改：视频元素不能太小，必须“可见”但透明，否则小米浏览器不渲染 */
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; font-family: monospace; }
+        
+        /* 视频层：保持一定大小确保浏览器渲染，但透明不可见 */
         #input-video {
-            position: absolute; 
-            top: 0; left: 0; 
-            width: 100%; /* 让它撑满，保持比例 */
-            height: 100%; 
-            object-fit: cover;
-            opacity: 0.001; /* 几乎透明，但不是 display:none */
-            z-index: -5; 
-            pointer-events: none;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover; opacity: 0.01; z-index: -10; pointer-events: none;
         }
 
-        /* 调试小窗 */
-        #debug-canvas {
-            position: absolute; bottom: 10px; right: 10px;
-            width: 120px; height: 160px; /* 竖屏比例 */
-            background: rgba(0,0,0,0.5);
-            border: 2px solid rgba(255,255,255,0.3);
-            z-index: 100;
-            border-radius: 8px;
-            /* 镜像翻转，符合自拍直觉 */
-            transform: scaleX(-1); 
-        }
+        /* 3D 层 */
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
 
-        /* 数据调试面板 */
-        #data-debug {
-            position: absolute; top: 10px; left: 10px;
-            font-size: 12px; color: #0f0; background: rgba(0,0,0,0.6);
-            padding: 8px; z-index: 200; pointer-events: none;
-            border-radius: 4px; line-height: 1.5;
+        /* 调试面板 */
+        #debug-panel {
+            position: absolute; top: 0; left: 0; width: 100%; padding: 10px;
+            pointer-events: none; z-index: 20;
         }
+        .log-line { color: #0f0; background: rgba(0,0,0,0.7); display: inline-block; padding: 2px 5px; margin-bottom: 2px; border-radius: 4px; font-size: 12px; }
+        .error-line { color: #f00 !important; }
 
         /* 启动遮罩 */
         #overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 999;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            transition: opacity 0.5s;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; z-index: 100;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; color: #fff;
+        }
+        #btn-start {
+            padding: 15px 40px; font-size: 18px; background: #C41E3A; color: white; border: none; border-radius: 50px; margin-top: 20px;
         }
         
-        button {
-            background: #2F5A46; color: #fff; border: 1px solid #FFD700;
-            padding: 15px 50px; border-radius: 50px; font-size: 18px;
-            margin-top: 20px; box-shadow: 0 0 20px rgba(47, 90, 70, 0.8);
-        }
-
-        /* 状态提示 */
-        #ui-panel {
-            position: absolute; top: 60px; width: 100%; text-align: center; z-index: 10; pointer-events: none;
-        }
-        #status-text {
-            display: inline-block; padding: 5px 15px;
-            background: rgba(0,0,0,0.5); border-radius: 15px;
-            color: #FFD700; font-weight: bold; border: 1px solid #FFD700;
+        /* 关键：状态指示器 */
+        #ai-status {
+            margin-top: 10px; font-size: 14px; color: #FFD700;
         }
     </style>
 </head>
 <body>
 
-    <!-- 调试数据 -->
-    <div id="data-debug">
-        SYSTEM: Ready<br>
-        RES: -<br>
-        HAND: Searching...
-    </div>
-
-    <!-- 启动层 -->
     <div id="overlay">
-        <h1 style="color:#C41E3A; margin-bottom:10px;">🎄 圣诞树手势版</h1>
-        <p style="color:#ccc; font-size:12px;">适配小米15 / iOS</p>
-        <button id="btn-start">开启摄像头</button>
+        <h1>🎄 圣诞树修复版</h1>
+        <div id="ai-status">等待用户操作...</div>
+        <button id="btn-start" onclick="startApp()">点击开始</button>
+        <p style="color:#666; font-size:12px; margin-top:20px;">如果点击后“模型状态”长时间卡在 Loading<br>请检查网络或开启 Wi-Fi</p>
     </div>
 
-    <div id="ui-panel"><div id="status-text">等待启动...</div></div>
+    <div id="debug-panel">
+        <div class="log-line" id="log-sys">Sys: Init</div><br>
+        <div class="log-line" id="log-model">Model: Idle</div><br>
+        <div class="log-line" id="log-hand">Hand: No</div><br>
+        <div class="log-line" id="log-fps">FPS: 0</div>
+    </div>
 
-    <!-- 视频流 -->
     <video id="input-video" playsinline webkit-playsinline muted autoplay></video>
-    
-    <!-- 调试画布 -->
-    <canvas id="debug-canvas"></canvas>
-    
-    <!-- 3D 场景 -->
     <div id="canvas-container"></div>
 
-    <!-- 依赖库 -->
-    <script type="importmap">
-        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <!-- 依赖 -->
+    <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }</script>
+    <!-- 锁定版本 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
 
     <script type="module">
         import * as THREE from 'three';
@@ -115,286 +70,200 @@
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
         // --- 全局变量 ---
+        const logs = {
+            sys: document.getElementById('log-sys'),
+            model: document.getElementById('log-model'),
+            hand: document.getElementById('log-hand'),
+            fps: document.getElementById('log-fps')
+        };
+        const statusEl = document.getElementById('ai-status');
         const video = document.getElementById('input-video');
-        const dbgCanvas = document.getElementById('debug-canvas');
-        const dbgCtx = dbgCanvas.getContext('2d');
-        const debugEl = document.getElementById('data-debug');
-        const statusEl = document.getElementById('status-text');
         
-        // 中间层 Canvas (用于清洗视频数据)
+        // 降采样 Canvas (关键优化：只处理 320px 宽度的图像)
         const processCanvas = document.createElement('canvas');
-        const processCtx = processCanvas.getContext('2d');
+        const processCtx = processCanvas.getContext('2d', { alpha: false }); // 优化性能
+        
+        const STATE = { target: 'tree', rotX: 0, lastTime: 0 };
+        
+        // --- 1. Three.js 极简设置 ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+        camera.position.set(0, 10, 40);
+        const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // 降低DPI
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.5, 0.4));
 
-        const STATE = { target: 'tree', rotX: 0, hasHand: false };
-        let app = null;
-
-        // --- 1. Three.js 场景 ---
-        class App {
-            constructor() {
-                this.scene = new THREE.Scene();
-                this.scene.fog = new THREE.FogExp2(0x050505, 0.03);
-                
-                this.camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
-                this.camera.position.set(0, 10, 45);
-
-                this.renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
-                this.renderer.setSize(window.innerWidth, window.innerHeight);
-                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                document.getElementById('canvas-container').appendChild(this.renderer.domElement);
-
-                // 辉光
-                this.composer = new EffectComposer(this.renderer);
-                this.composer.addPass(new RenderPass(this.scene, this.camera));
-                this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-                this.bloom.strength = 1.0; this.bloom.radius = 0.5; this.bloom.threshold = 0.2;
-                this.composer.addPass(this.bloom);
-
-                this.initObjects();
-                this.animate();
-                window.addEventListener('resize', () => this.resize());
-            }
-
-            initObjects() {
-                const group = new THREE.Group();
-                this.scene.add(group);
-                this.group = group;
-
-                // 灯光
-                this.scene.add(new THREE.AmbientLight(0xffffff, 0.2));
-                const l = new THREE.PointLight(0xFFD700, 2, 50);
-                l.position.set(0, 20, 10);
-                this.scene.add(l);
-
-                // 粒子
-                const geo = new THREE.BufferGeometry();
-                const pos=[], col=[], sizes=[];
-                const tTree=[], tScatter=[];
-                const colors = [0x2F5A46, 0xFFD700, 0xC41E3A, 0xFFFFFF].map(c=>new THREE.Color(c));
-
-                for(let i=0; i<1200; i++) {
-                    const rRatio = i/1200;
-                    // Tree
-                    const y = rRatio * 30 - 15;
-                    const r = (1-rRatio)*12 + Math.random();
-                    const a = i * 0.2;
-                    tTree.push(Math.cos(a*8)*r, y, Math.sin(a*8)*r);
-                    
-                    // Scatter
-                    const sr = 35 + Math.random()*15;
-                    const phi = Math.random()*Math.PI*2, theta = Math.random()*Math.PI;
-                    tScatter.push(sr*Math.sin(theta)*Math.cos(phi), sr*Math.sin(theta)*Math.sin(phi), sr*Math.cos(theta));
-                    
-                    pos.push(tTree[i*3], tTree[i*3+1], tTree[i*3+2]);
-                    const c = colors[i%4];
-                    col.push(c.r, c.g, c.b);
-                    sizes.push(Math.random()*0.8+0.4);
-                }
-                geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
-                geo.setAttribute('color', new THREE.Float32BufferAttribute(col,3));
-                geo.setAttribute('size', new THREE.Float32BufferAttribute(sizes,1));
-                geo.userData = {tree:tTree, scatter:tScatter};
-
-                const tex = this.makeTex();
-                const mat = new THREE.PointsMaterial({size:0.8, vertexColors:true, map:tex, blending:THREE.AdditiveBlending, depthWrite:false, transparent:true});
-                this.parts = new THREE.Points(geo, mat);
-                group.add(this.parts);
-
-                // 照片
-                this.photos = [];
-                const pGeo = new THREE.PlaneGeometry(3,4);
-                for(let i=0; i<20; i++){
-                    const m = new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial({color:i%2?0xC41E3A:0x2F5A46, side:2}));
-                    const y = (i/20)*30-15, r = (1-i/20)*12+2, a = i*0.5;
-                    m.userData = {
-                        tree: new THREE.Vector3(Math.cos(a*5)*r, y, Math.sin(a*5)*r),
-                        zoom: new THREE.Vector3((Math.random()-.5)*6, (Math.random()-.5)*6, 32+Math.random()*4),
-                        scatter: new THREE.Vector3((Math.random()-.5)*60, (Math.random()-.5)*60, (Math.random()-.5)*60)
-                    };
-                    m.position.copy(m.userData.tree);
-                    m.lookAt(0,y,0); m.rotateY(Math.PI);
-                    this.photos.push(m);
-                    group.add(m);
-                }
-            }
-
-            makeTex() {
-                const c = document.createElement('canvas'); c.width=32; c.height=32;
-                const ctx = c.getContext('2d');
-                const g = ctx.createRadialGradient(16,16,0,16,16,16);
-                g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(1,'rgba(0,0,0,0)');
-                ctx.fillStyle=g; ctx.fillRect(0,0,32,32);
-                return new THREE.CanvasTexture(c);
-            }
-
-            resize() {
-                this.camera.aspect = window.innerWidth/window.innerHeight;
-                this.camera.updateProjectionMatrix();
-                this.renderer.setSize(window.innerWidth, window.innerHeight);
-                this.composer.setSize(window.innerWidth, window.innerHeight);
-            }
-
-            animate() {
-                requestAnimationFrame(()=>this.animate());
-                
-                // 粒子运动
-                const pos = this.parts.geometry.attributes.position.array;
-                const tgt = STATE.target === 'tree' ? this.parts.geometry.userData.tree : this.parts.geometry.userData.scatter;
-                for(let i=0; i<1200; i++) {
-                    const k=i*3;
-                    pos[k] += (tgt[k]-pos[k])*0.08;
-                    pos[k+1] += (tgt[k+1]-pos[k+1])*0.08;
-                    pos[k+2] += (tgt[k+2]-pos[k+2])*0.08;
-                }
-                this.parts.geometry.attributes.position.needsUpdate = true;
-
-                // 照片运动
-                this.photos.forEach(p => {
-                    let t = p.userData.tree;
-                    if(STATE.target==='scatter') t = p.userData.scatter;
-                    if(STATE.target==='zoom') t = p.userData.zoom;
-                    p.position.lerp(t, 0.08);
-                    
-                    if(STATE.target==='zoom') p.lookAt(this.camera.position);
-                    else {
-                        const lookT = STATE.target==='scatter'? p.position : new THREE.Vector3(0,p.position.y,0);
-                        p.lookAt(lookT); if(STATE.target==='tree') p.rotateY(Math.PI);
-                    }
-                });
-
-                // 旋转
-                const targetRot = STATE.rotX;
-                this.group.rotation.y += (targetRot - this.group.rotation.y)*0.1;
-                if(!STATE.hasHand) this.group.rotation.y += 0.003;
-
-                this.composer.render();
-            }
+        // 简单粒子
+        const group = new THREE.Group(); scene.add(group);
+        const pMat = new THREE.PointsMaterial({size:0.8, color:0xFFD700, blending:THREE.AdditiveBlending, transparent:true});
+        const pGeo = new THREE.BufferGeometry();
+        const pos = [], basePos = [];
+        for(let i=0; i<800; i++){
+            const y = (i/800)*30 - 15;
+            const r = (1-i/800)*10 + Math.random();
+            const a = i * 0.3;
+            const x = Math.cos(a)*r, z = Math.sin(a)*r;
+            pos.push(x,y,z); basePos.push(x,y,z);
         }
+        pGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        const particles = new THREE.Points(pGeo, pMat);
+        group.add(particles);
+        scene.add(new THREE.AmbientLight(0xffffff,0.5));
 
-        // --- 2. AI 逻辑 ---
-        async function initAI() {
-            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-            hands.setOptions({
-                maxNumHands: 1,
-                modelComplexity: 1, // 移动端 1 更精准，若卡顿改 0
-                minDetectionConfidence: 0.5,
-                minTrackingConfidence: 0.5
-            });
-
-            hands.onResults(results => {
-                // 绘制调试
-                dbgCanvas.width = processCanvas.width;
-                dbgCanvas.height = processCanvas.height;
-                dbgCtx.clearRect(0,0,dbgCanvas.width, dbgCanvas.height);
-                // 画出 AI 看到的实际图像
-                dbgCtx.drawImage(results.image, 0, 0, dbgCanvas.width, dbgCanvas.height);
-
-                if (results.multiHandLandmarks.length > 0) {
-                    STATE.hasHand = true;
-                    const lm = results.multiHandLandmarks[0];
-                    drawConnectors(dbgCtx, lm, HAND_CONNECTIONS, {color:'#0f0', lineWidth:2});
-                    drawLandmarks(dbgCtx, lm, {color:'#f00', lineWidth:1});
-
-                    // 1. 旋转 (镜像处理)
-                    STATE.rotX = (0.5 - lm[9].x) * 4;
-
-                    // 2. 捏合计算 (更宽松的阈值)
-                    const dPinch = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-                    
-                    // 3. 展开计算
-                    const wrist = lm[0];
-                    let openFingers = 0;
-                    [8,12,16,20].forEach((tip, i) => {
-                        const pip = [6,10,14,18][i];
-                        if(Math.hypot(lm[tip].x-wrist.x, lm[tip].y-wrist.y) > Math.hypot(lm[pip].x-wrist.x, lm[pip].y-wrist.y)) 
-                            openFingers++;
-                    });
-
-                    // 状态判定
-                    let txt = "HAND DETECTED";
-                    let col = "#fff";
-
-                    // 阈值：0.08 适配 iPhone SE
-                    if (dPinch < 0.08) {
-                        STATE.target = 'zoom';
-                        txt = "🔍 捏合: 照片预览";
-                    } else if (openFingers >= 4) {
-                        STATE.target = 'scatter';
-                        txt = "✨ 张开: 星尘爆发";
-                        col = "#C41E3A";
-                    } else if (openFingers <= 1) {
-                        STATE.target = 'tree';
-                        txt = "🎄 握拳: 圣诞树";
-                        col = "#FFD700";
-                    }
-                    
-                    statusEl.innerText = txt;
-                    statusEl.style.color = col;
-                    debugEl.innerHTML = `RES: ${processCanvas.width}x${processCanvas.height}<br>PINCH: ${dPinch.toFixed(3)}<br>STATE: ${STATE.target}`;
-
-                } else {
-                    STATE.hasHand = false;
-                    statusEl.innerText = "请将手放入画面";
-                    statusEl.style.color = "#aaa";
-                    debugEl.innerHTML = `RES: ${processCanvas.width}x${processCanvas.height}<br>HAND: NO`;
+        function render3D() {
+            requestAnimationFrame(render3D);
+            const positions = particles.geometry.attributes.position.array;
+            for(let i=0; i<800; i++){
+                const idx = i*3;
+                let tx = basePos[idx], ty = basePos[idx+1], tz = basePos[idx+2];
+                if(STATE.target === 'scatter') {
+                    tx *= 3; ty *= 3; tz *= 3;
+                } else if(STATE.target === 'zoom') {
+                    tz += 20;
                 }
-            });
-            return hands;
+                positions[idx] += (tx - positions[idx]) * 0.1;
+                positions[idx+1] += (ty - positions[idx+1]) * 0.1;
+                positions[idx+2] += (tz - positions[idx+2]) * 0.1;
+            }
+            particles.geometry.attributes.position.needsUpdate = true;
+            group.rotation.y += (STATE.rotX - group.rotation.y) * 0.1;
+            if(STATE.target === 'tree') group.rotation.y += 0.005;
+            composer.render();
         }
+        render3D();
+        window.onresize = () => { renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight); };
 
-        // --- 3. 摄像头启动与循环 ---
-        async function start() {
-            document.getElementById('btn-start').innerText = "正在启动...";
+        // --- 2. 核心：带错误处理的 AI 启动 ---
+        window.startApp = async function() {
+            document.getElementById('btn-start').style.display = 'none';
+            statusEl.innerText = "正在请求摄像头...";
             
-            app = new App();
-            const hands = await initAI();
-
             try {
-                // 请求摄像头
+                // 1. 启动摄像头
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: 'user',
-                        width: { ideal: 640 }, // 不要强制，给个理想值
-                        height: { ideal: 480 }
-                    },
+                    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
                     audio: false
                 });
-                
                 video.srcObject = stream;
-                
-                // 等待元数据
-                video.onloadedmetadata = () => {
-                    document.getElementById('overlay').style.opacity = 0;
-                    setTimeout(()=>document.getElementById('overlay').style.display='none', 500);
-                    video.play();
-                    processLoop(hands);
-                };
+                await new Promise(r => video.onloadedmetadata = r);
+                video.play();
+                logs.sys.innerText = `Cam: ${video.videoWidth}x${video.videoHeight}`;
 
-            } catch(e) {
-                alert("摄像头启动失败: " + e.message);
-                console.error(e);
+                // 2. 加载模型
+                statusEl.innerText = "正在下载 AI 模型 (约5MB)...";
+                logs.model.innerText = "Model: Loading...";
+                
+                const hands = new Hands({locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`;
+                }});
+
+                hands.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 0, // 关键：使用 0 号模型 (Lite)，速度最快，兼容性最好
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+
+                hands.onResults(onResults);
+                
+                // 3. 预热模型 (强制初始化)
+                statusEl.innerText = "正在初始化引擎...";
+                await hands.initialize();
+                
+                statusEl.innerText = "启动成功！";
+                logs.model.innerText = "Model: Active";
+                setTimeout(() => document.getElementById('overlay').style.display = 'none', 500);
+
+                // 4. 开始循环
+                processLoop(hands);
+
+            } catch (err) {
+                console.error(err);
+                statusEl.innerText = "错误: " + err.message;
+                statusEl.style.color = "red";
+                logs.sys.innerText = "Error: " + err.message;
+                logs.sys.classList.add('error-line');
+                alert("启动失败，可能是网络无法下载模型，或摄像头被拒绝。\n" + err.message);
             }
         }
 
-        // 核心循环：手动将视频画到 Canvas 再传给 AI
-        async function processLoop(hands) {
-            if (video.readyState >= 2) {
-                // 1. 设置中间层 Canvas 尺寸匹配视频流
-                if (processCanvas.width !== video.videoWidth) {
-                    processCanvas.width = video.videoWidth;
-                    processCanvas.height = video.videoHeight;
-                }
+        // --- 3. 结果处理 ---
+        function onResults(results) {
+            STATE.lastTime = performance.now();
+            
+            if (results.multiHandLandmarks.length > 0) {
+                const lm = results.multiHandLandmarks[0];
+                logs.hand.innerText = "Hand: Yes";
+                logs.hand.style.color = "#0f0";
                 
-                // 2. 清洗数据：将 Video 帧画到 Canvas 上
-                // 这步操作会强制浏览器解码当前帧，解决“视频元素不可见导致不解码”的问题
-                processCtx.drawImage(video, 0, 0);
+                // 简单逻辑
+                STATE.rotX = (0.5 - lm[9].x) * 4;
+                
+                // 捏合
+                const pinch = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+                // 张开
+                const wrist = lm[0];
+                let open = 0;
+                [8,12,16,20].forEach((t,i) => {
+                    const p = [6,10,14,18][i];
+                    if(Math.hypot(lm[t].x-wrist.x, lm[t].y-wrist.y) > Math.hypot(lm[p].x-wrist.x, lm[p].y-wrist.y)) open++;
+                });
 
-                // 3. 发送清洗后的 Canvas 给 AI
-                await hands.send({image: processCanvas});
+                if(pinch < 0.08) STATE.target = 'zoom';
+                else if(open >= 4) STATE.target = 'scatter';
+                else STATE.target = 'tree';
+
+            } else {
+                logs.hand.innerText = "Hand: Searching...";
+                logs.hand.style.color = "yellow";
+            }
+        }
+
+        // --- 4. 优化循环 (降采样) ---
+        let lastFrameTime = 0;
+        const FPS_LIMIT = 30; // 限制 AI 帧率，防止过热
+
+        async function processLoop(hands) {
+            const now = performance.now();
+            if (now - lastFrameTime >= 1000 / FPS_LIMIT) {
+                lastFrameTime = now;
+                logs.fps.innerText = `Time: ${(now % 1000).toFixed(0)}`;
+
+                if (video.readyState >= 2) {
+                    // 强制缩放到 320px 宽，保持比例
+                    const scale = 320 / video.videoWidth;
+                    const w = 320;
+                    const h = video.videoHeight * scale;
+                    
+                    if(processCanvas.width !== w) {
+                        processCanvas.width = w;
+                        processCanvas.height = h;
+                    }
+
+                    // 绘制这一帧
+                    processCtx.drawImage(video, 0, 0, w, h);
+                    
+                    // 发送给 AI
+                    try {
+                        await hands.send({image: processCanvas});
+                    } catch(e) {
+                        logs.model.innerText = "Err: Send Fail";
+                    }
+                }
             }
             requestAnimationFrame(() => processLoop(hands));
         }
 
-        document.getElementById('btn-start').onclick = start;
+        // 全局错误捕获
+        window.onerror = function(msg, url, line) {
+            alert("JS Error: " + msg);
+            return false;
+        };
 
     </script>
 </body>
