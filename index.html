@@ -186,6 +186,44 @@
                     this.photos.push(m);
                     this.group.add(m);
                 }
+
+                // 3. 螺旋灯串 / 彩带
+                const ribbonPoints = [];
+                const ribbonTurns = 6;
+                const ribbonCount = 120;
+                const ribbonHeight = 35;
+                for (let i = 0; i <= ribbonCount; i++) {
+                    const t = i / ribbonCount;
+                    const angle = t * Math.PI * 2 * ribbonTurns;
+                    const radius = (1 - t) * 11 + 1.5;
+                    const y = t * ribbonHeight - ribbonHeight / 2;
+                    ribbonPoints.push(new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius));
+                }
+                const ribbonCurve = new THREE.CatmullRomCurve3(ribbonPoints);
+                const ribbonGeo = new THREE.TubeGeometry(ribbonCurve, 240, 0.18, 10, false);
+                ribbonGeo.computeBoundingBox();
+                const bbox = ribbonGeo.boundingBox;
+                const ribbonStart = new THREE.Color('#FFD27D');
+                const ribbonEnd = new THREE.Color('#FF6B6B');
+                const ribbonColors = [];
+                const positions = ribbonGeo.attributes.position;
+                for (let i = 0; i < positions.count; i++) {
+                    const y = positions.getY(i);
+                    const mix = (y - bbox.min.y) / (bbox.max.y - bbox.min.y);
+                    const c = ribbonStart.clone().lerp(ribbonEnd, mix);
+                    ribbonColors.push(c.r, c.g, c.b);
+                }
+                ribbonGeo.setAttribute('color', new THREE.Float32BufferAttribute(ribbonColors, 3));
+                this.ribbonMaterial = new THREE.MeshStandardMaterial({
+                    vertexColors: true,
+                    emissive: new THREE.Color('#FFB86B'),
+                    emissiveIntensity: 1.1,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                const ribbon = new THREE.Mesh(ribbonGeo, this.ribbonMaterial);
+                ribbon.position.y += 0.4;
+                this.group.add(ribbon);
             }
 
             animate() {
@@ -230,6 +268,13 @@
                         p.quaternion.slerp(q, 0.1);
                     }
                 });
+
+                // 灯串轻微闪烁
+                if (this.ribbonMaterial) {
+                    const pulse = Math.sin(Date.now() * 0.002);
+                    this.ribbonMaterial.emissiveIntensity = 1.1 + pulse * 0.35;
+                    this.ribbonMaterial.opacity = 0.85 + pulse * 0.08;
+                }
 
                 this.composer.render();
             }
